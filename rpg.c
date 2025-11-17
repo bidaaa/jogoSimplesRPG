@@ -1,12 +1,14 @@
 #include "raylib.h"
 #include <stdio.h>  // Para sprintf (formatar texto)
 #include <stdbool.h> // Para bool, true, false
+#include <stdlib.h> // Para rand, srand
+#include <time.h>   // Para time (semente RNG)
 
 //------------------------------------------------------------------------------------
 // Constantes e Definições de Tela
 //------------------------------------------------------------------------------------
-#define SCREEN_WIDTH 800
-#define SCREEN_HEIGHT 600
+#define SCREEN_WIDTH 1000
+#define SCREEN_HEIGHT 700
 
 //------------------------------------------------------------------------------------
 // Estruturas de Dados do Jogo
@@ -17,7 +19,8 @@ typedef enum {
     GAME_STATE_EXPLORE,
     GAME_STATE_BATTLE,
     GAME_STATE_ENDING_GOOD,
-    GAME_STATE_ENDING_BAD
+    GAME_STATE_ENDING_BAD,
+    GAME_STATE_ENDING_ESCAPE
 } GameState;
 
 // Itens que o jogador pode coletar
@@ -26,7 +29,8 @@ typedef enum {
     ITEM_POTION,      // Cura o jogador (Uso único)
     ITEM_SWORD,       // Causa dano médio ao chefe (Reutilizável)
     ITEM_BOMB,        // Causa dano alto ao chefe (Uso único)
-    ITEM_SHIELD       // Bloqueia o próximo ataque do chefe (Reutilizável)
+    ITEM_COIN,        // Distrai o chefe para fugir (Uso único)
+    ITEM_ARMOR        // Reduz dano recebido (Reutilizável)
 } ItemType;
 
 // Estrutura do Jogador
@@ -68,7 +72,7 @@ static int currentStage; // Estágio da exploração (0 a 3)
 // Variáveis da batalha
 static const char* battleMessage; // Mensagem de status (Ex: "Você usou Poção!")
 static char messageBuffer[256]; // Buffer para formatar mensagens
-static bool playerIsShielded;
+static bool playerHasArmor;
 static float bossTurnTimer; // Um pequeno delay para o turno do chefe
 
 // Variáveis para a mensagem de coleta de item
@@ -85,7 +89,8 @@ const char* GetItemName(ItemType item) {
         case ITEM_POTION: return "Pocao (Cura 50 HP)";
         case ITEM_SWORD:  return "Espada (Dano 30)";
         case ITEM_BOMB:   return "Bomba (Dano 70)";
-        case ITEM_SHIELD: return "Escudo (Bloqueia)";
+        case ITEM_COIN:   return "Moeda (Pode \ndistrair o chefe)";
+        case ITEM_ARMOR:  return "Armadura (Reduz dano)";
         default:          return "Vazio";
     }
 }
@@ -93,30 +98,43 @@ const char* GetItemName(ItemType item) {
 // Define qual item o jogador recebe com base no estágio e na escolha (0 para esquerda/cima, 1 para direita/baixo)
 ItemType GetItemForChoice(int stage, int choice) {
     if (stage == 0) {
-        return (choice == 0) ? ITEM_POTION : ITEM_SHIELD;
+        return (choice == 0) ? ITEM_POTION : ITEM_POTION;
     }
     if (stage == 1) {
         return (choice == 0) ? ITEM_SWORD : ITEM_BOMB;
     }
     if (stage == 2) {
-        return (choice == 0) ? ITEM_POTION : ITEM_SWORD;
+        // Nesta cena o jogador pode coletar uma moeda (choice == 1)
+        return (choice == 0) ? ITEM_ARMOR : ITEM_COIN;
     }
     if (stage == 3) {
-        return (choice == 0) ? ITEM_SHIELD : ITEM_BOMB;
+        return (choice == 0) ? ITEM_POTION : ITEM_POTION;
     }
     return ITEM_NONE;
 }
 
 // Ação do chefe
 void BossAttack() {
-    if (playerIsShielded) {
-        playerIsShielded = false;
-        battleMessage = "Chefe ataca! Voce bloqueou com o Escudo!";
-    } else {
-        int damage = boss.attack;
+    if (playerHasArmor) {
+        // Com armadura ativa, o dano é reduzido em 50%
+        int min = (boss.attack - 5) / 2;
+        if (min < 1) min = 1;
+        int max = (boss.attack + 5) / 2;
+        int damage = min + (rand() % (max - min + 1));
         player.hp -= damage;
         if (player.hp < 0) player.hp = 0;
         
+        sprintf(messageBuffer, "Chefe ataca com armadura ativa! Voce levou %d de dano.", damage);
+        battleMessage = messageBuffer;
+    } else {
+        // Dano aleatorio do chefe (varia em torno do valor base)
+        int min = boss.attack - 5;
+        if (min < 1) min = 1;
+        int max = boss.attack + 5;
+        int damage = min + (rand() % (max - min + 1));
+        player.hp -= damage;
+        if (player.hp < 0) player.hp = 0;
+
         sprintf(messageBuffer, "Chefe ataca! Voce levou %d de dano!", damage);
         battleMessage = messageBuffer;
     }
@@ -139,19 +157,42 @@ void UseItem(int index) {
             itemUsed[index] = true; // <-- Marcado como usado
             break;
         case ITEM_SWORD:
-            boss.hp -= 30;
-            battleMessage = "Voce usou Espada! Causou 30 de dano!";
-            // NÂO marcar como usado
-            break;
+            // A Espada nao e um item de utilitario: ela apenas aumenta o dano do ataque.
+            battleMessage = "Espada: aumenta seu dano. Use ATACAR [A].";
+            return; // nao gasta o turno nem prepara o turno do chefe
         case ITEM_BOMB:
-            boss.hp -= 70;
-            battleMessage = "Voce usou Bomba! Causou 70 de dano!";
-            itemUsed[index] = true; // <-- Marcado como usado
+            // Bomba causa dano alto e aleatorio
+            {
+                int min = 60;
+                int max = 90;
+                int dmg = min + (rand() % (max - min + 1));
+                boss.hp -= dmg;
+                if (boss.hp < 0) boss.hp = 0;
+                sprintf(messageBuffer, "Voce usou Bomba! Causou %d de dano!", dmg);
+                battleMessage = messageBuffer;
+                itemUsed[index] = true; // <-- Marcado como usado
+            }
             break;
-        case ITEM_SHIELD:
-            playerIsShielded = true;
-            battleMessage = "Voce usou Escudo! Proximo ataque sera bloqueado.";
-            // NÂO marcar como usado
+        case ITEM_COIN:
+            // Usar a moeda tem 50% de chance de distrair o chefe
+            itemUsed[index] = true;
+            if (rand() % 2 == 0) {
+                // Sucesso: distrai o chefe e fuga
+                battleMessage = "Voce usou Moeda! Distraiu o chefe e fugiu!";
+                currentState = GAME_STATE_ENDING_ESCAPE;
+                return; // Transicao imediata para o final de fuga
+            } else {
+                // Falha: moeda nao distrai, chefe contra-ataca
+                battleMessage = "Voce usou Moeda! Mas o chefe nao se distraiu...";
+                // Prepara o turno do chefe para contra-atacar
+                battleState = BATTLE_BOSS_TURN;
+                bossTurnTimer = 1.5f;
+                return; // Gasta o turno
+            }
+        case ITEM_ARMOR:
+            playerHasArmor = true;
+            battleMessage = "Voce equipou Armadura! Proximos ataques causarao menos dano.";
+            // NÂO marcar como usado (permanece ativo)
             break;
         default:
             battleMessage = "Item invalido?";
@@ -163,6 +204,40 @@ void UseItem(int index) {
     // Prepara o turno do chefe
     battleState = BATTLE_BOSS_TURN;
     bossTurnTimer = 1.5f; // Delay de 1.5 segundos
+}
+
+// Verifica se o jogador possui uma espada no inventario
+bool PlayerHasSword(void) {
+    for (int i = 0; i < INVENTORY_SIZE; i++) {
+        if (inventory[i] == ITEM_SWORD) return true;
+    }
+    return false;
+}
+
+// Ação de ataque do jogador (botao ATACAR)
+void PlayerAttack(void) {
+    // Dano aleatorio do jogador; espada aumenta o intervalo
+    int damage = 0;
+    if (PlayerHasSword()) {
+        int min = 20;
+        int max = 40;
+        damage = min + (rand() % (max - min + 1));
+        boss.hp -= damage;
+        if (boss.hp < 0) boss.hp = 0;
+        sprintf(messageBuffer, "Voce atacou com a espada! Causou %d de dano!", damage);
+    } else {
+        int min = 5;
+        int max = 15;
+        damage = min + (rand() % (max - min + 1));
+        boss.hp -= damage;
+        if (boss.hp < 0) boss.hp = 0;
+        sprintf(messageBuffer, "Voce atacou desarmado! Causou %d de dano!", damage);
+    }
+    battleMessage = messageBuffer;
+
+    // Prepara o turno do chefe
+    battleState = BATTLE_BOSS_TURN;
+    bossTurnTimer = 1.5f;
 }
 
 // Inicializa/Reinicia as variáveis do jogo
@@ -180,19 +255,22 @@ void InitGame(void) {
     }
 
     // Status do Jogador
-    player.hp = 100;
-    player.maxHp = 100;
+    player.hp = 120;
+    player.maxHp = 120;
 
     // Status do Chefe
     boss.hp = 200;
     boss.maxHp = 200;
-    boss.attack = 25; // Dano do chefe
+    boss.attack = 22; // Dano do chefe
 
     // Status da Batalha
     battleState = BATTLE_PLAYER_TURN;
     selectedItemIndex = 0;
-    playerIsShielded = false;
+    playerHasArmor = false;
     battleMessage = "Batalha contra o Chefe! Escolha seu item.";
+
+    // Inicializar semente do RNG para danos aleatorios
+    srand((unsigned int)time(NULL));
 }
 
 //------------------------------------------------------------------------------------
@@ -258,6 +336,11 @@ void UpdateBattle(void) {
             selectedItemIndex = (selectedItemIndex - 1 + INVENTORY_SIZE) % INVENTORY_SIZE;
         }
 
+        // Ataque direto (botao ATACAR)
+        if (IsKeyPressed(KEY_A)) {
+            PlayerAttack();
+        }
+
         if (IsKeyPressed(KEY_ENTER)) {
             UseItem(selectedItemIndex);
         }
@@ -287,46 +370,64 @@ void UpdateEnding(void) {
 // NOVOS: Funções para desenhar os "sprites"
 void DrawPlayerSprite(int posX, int posY) {
     // Cabeça
-    DrawCircle(posX + 10, posY - 10, 10, WHITE);
+    DrawCircle(posX + 10, posY - 10, 10, (Color){255, 200, 150, 255});
+    DrawCircleLines(posX + 10, posY - 10, 10, BLACK);
+    // Olhos
+    DrawCircle(posX + 6, posY - 12, 2, BLACK);
+    DrawCircle(posX + 14, posY - 12, 2, BLACK);
     // Torso
-    DrawRectangle(posX, posY, 20, 40, BLUE);
+    DrawRectangle(posX, posY, 20, 40, (Color){0, 150, 255, 255});
+    DrawRectangleLines(posX, posY, 20, 40, (Color){0, 100, 200, 255});
     // Braços
-    DrawRectangle(posX - 5, posY + 5, 5, 20, BLUE);
-    DrawRectangle(posX + 20, posY + 5, 5, 20, BLUE);
+    DrawRectangle(posX - 5, posY + 5, 5, 20, (Color){255, 200, 150, 255});
+    DrawRectangle(posX + 20, posY + 5, 5, 20, (Color){255, 200, 150, 255});
     // Pernas
-    DrawRectangle(posX + 2, posY + 40, 6, 20, BLUE);
-    DrawRectangle(posX + 12, posY + 40, 6, 20, BLUE);
+    DrawRectangle(posX + 2, posY + 40, 6, 20, (Color){50, 50, 50, 255});
+    DrawRectangle(posX + 12, posY + 40, 6, 20, (Color){50, 50, 50, 255});
 }
 
 void DrawBossSprite(int posX, int posY) {
+    // Aura/Sombra
+    DrawCircle(posX + 20, posY + 30, 50, (Color){100, 0, 0, 100});
     // Cabeça
-    DrawCircle(posX + 20, posY - 15, 15, DARKGRAY);
+    DrawCircle(posX + 20, posY - 15, 15, (Color){80, 20, 20, 255});
+    DrawCircleLines(posX + 20, posY - 15, 15, (Color){200, 50, 50, 255});
+    // Olhos malévolos
+    DrawCircle(posX + 14, posY - 18, 3, (Color){255, 100, 0, 255});
+    DrawCircle(posX + 26, posY - 18, 3, (Color){255, 100, 0, 255});
     // Torso (maior)
-    DrawRectangle(posX, posY, 40, 60, RED);
+    DrawRectangle(posX, posY, 40, 60, (Color){200, 0, 0, 255});
+    DrawRectangleLines(posX, posY, 40, 60, (Color){100, 0, 0, 255});
     // Braços
-    DrawRectangle(posX - 10, posY + 10, 10, 30, RED);
-    DrawRectangle(posX + 40, posY + 10, 10, 30, RED);
+    DrawRectangle(posX - 10, posY + 10, 10, 30, (Color){150, 0, 0, 255});
+    DrawRectangle(posX + 40, posY + 10, 10, 30, (Color){150, 0, 0, 255});
     // Pernas
-    DrawRectangle(posX + 5, posY + 60, 10, 30, RED);
-    DrawRectangle(posX + 25, posY + 60, 10, 30, RED);
+    DrawRectangle(posX + 5, posY + 60, 10, 30, (Color){100, 0, 0, 255});
+    DrawRectangle(posX + 25, posY + 60, 10, 30, (Color){100, 0, 0, 255});
 }
 
 
 // Desenha a UI de Exploração
 void DrawExplore(void) {
-    ClearBackground(BLACK);
+    ClearBackground((Color){20, 20, 40, 255});
 
     // --- NOVO: Checar se a mensagem de item deve aparecer ---
     if (itemMessageTimer > 0) {
-        // Limpa a tela e mostra a mensagem de coleta
-        sprintf(messageBuffer, "Voce coletou: %s!", GetItemName(lastItemCollected));
+        // Fundo com efeito
+        DrawRectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, (Color){0, 0, 0, 200});
         
+        // Caixa de coleta
+        DrawRectangle(SCREEN_WIDTH / 2 - 300, SCREEN_HEIGHT / 2 - 100, 600, 200, (Color){50, 50, 100, 255});
+        DrawRectangleLines(SCREEN_WIDTH / 2 - 300, SCREEN_HEIGHT / 2 - 100, 600, 200, (Color){100, 200, 255, 255});
+        
+        // Mensagem de coleta
+        sprintf(messageBuffer, "Voce coletou: %s!", GetItemName(lastItemCollected));
         int textWidth = MeasureText(messageBuffer, 30);
-        DrawText(messageBuffer, SCREEN_WIDTH / 2 - textWidth / 2, SCREEN_HEIGHT / 2 - 40, 30, GREEN);
+        DrawText(messageBuffer, SCREEN_WIDTH / 2 - textWidth / 2, SCREEN_HEIGHT / 2 - 50, 30, (Color){100, 255, 150, 255});
         
         const char* msg2 = "Carregando proximo cenario...";
-        int textWidth2 = MeasureText(msg2, 20);
-        DrawText(msg2, SCREEN_WIDTH / 2 - textWidth2 / 2, SCREEN_HEIGHT / 2 + 20, 20, GRAY);
+        int textWidth2 = MeasureText(msg2, 18);
+        DrawText(msg2, SCREEN_WIDTH / 2 - textWidth2 / 2, SCREEN_HEIGHT / 2 + 40, 18, (Color){150, 150, 200, 255});
         
         return; // Pula o desenho normal da exploração
     }
@@ -359,11 +460,18 @@ void DrawExplore(void) {
             break;
     }
 
-    DrawText(storyText, 40, 150, 20, RAYWHITE);
-    DrawText(choice1Text, 60, 250, 20, YELLOW);
-    DrawText(choice2Text, 60, 300, 20, YELLOW);
+    DrawText(storyText, 40, 150, 22, (Color){200, 220, 255, 255});
     
-    DrawText("Pressione [1] ou [2] para escolher...", 40, 450, 20, GRAY);
+    // Caixas de escolha
+    DrawRectangle(40, 230, 450, 80, (Color){50, 80, 150, 200});
+    DrawRectangleLines(40, 230, 450, 80, (Color){100, 150, 255, 255});
+    DrawText(choice1Text, 60, 255, 18, (Color){200, 255, 100, 255});
+    
+    DrawRectangle(40, 320, 450, 80, (Color){50, 80, 150, 200});
+    DrawRectangleLines(40, 320, 450, 80, (Color){100, 150, 255, 255});
+    DrawText(choice2Text, 60, 345, 18, (Color){200, 255, 100, 255});
+    
+    DrawText("Pressione [1] ou [2] para escolher...", 40, 550, 16, (Color){150, 200, 255, 255});
 }
 
 // Desenha a UI de Batalha
@@ -372,73 +480,106 @@ void DrawBattle(void) {
     char bossHpText[64];
     char playerHpText[64];
     
-    ClearBackground(DARKGRAY);
+    ClearBackground((Color){30, 30, 50, 255});
 
     // --- Desenhar Chefe ---
-    // --- ATUALIZADO: Usando a função de sprite ---
-    DrawBossSprite(SCREEN_WIDTH / 2 - 20, 50); // Posição (x, y) do torso
-    //DrawText("CHEFE", SCREEN_WIDTH / 2 - 30, 95, 20, WHITE); // Opcional
+    DrawBossSprite(SCREEN_WIDTH / 2 - 20, 50);
     
-    // HP do Chefe
-    DrawRectangle(SCREEN_WIDTH / 2 - 150, 140, 300, 20, LIGHTGRAY);
-    DrawRectangle(SCREEN_WIDTH / 2 - 150, 140, (int)(300.0f * ((float)boss.hp / boss.maxHp)), 20, RED);
+    // HP do Chefe com borda
+    DrawRectangle(SCREEN_WIDTH / 2 - 150, 140, 300, 25, (Color){50, 50, 80, 255});
+    DrawRectangleLines(SCREEN_WIDTH / 2 - 150, 140, 300, 25, (Color){100, 100, 150, 255});
+    DrawRectangle(SCREEN_WIDTH / 2 - 150, 140, (int)(300.0f * ((float)boss.hp / boss.maxHp)), 25, (Color){255, 50, 50, 255});
     sprintf(bossHpText, "HP: %d / %d", boss.hp, boss.maxHp);
-    DrawText(bossHpText, SCREEN_WIDTH / 2 - 60, 140, 20, WHITE);
-
+    DrawText(bossHpText, SCREEN_WIDTH / 2 - 65, 142, 20, WHITE);
 
     // --- Desenhar Jogador ---
-    // --- ATUALIZADO: Usando a função de sprite ---
-    DrawPlayerSprite(SCREEN_WIDTH / 2 - 10, 260); // Posição (x, y) do torso
-    //DrawText("PLAYER", SCREEN_WIDTH / 2 - 30, 310, 20, WHITE); // Opcional
+    DrawPlayerSprite(SCREEN_WIDTH / 2 - 10, 260);
     
-    // HP do Jogador
-    DrawRectangle(SCREEN_WIDTH / 2 - 150, 350, 300, 20, LIGHTGRAY);
-    DrawRectangle(SCREEN_WIDTH / 2 - 150, 350, (int)(300.0f * ((float)player.hp / player.maxHp)), 20, GREEN);
+    // HP do Jogador com borda
+    DrawRectangle(SCREEN_WIDTH / 2 - 150, 350, 300, 25, (Color){50, 50, 80, 255});
+    DrawRectangleLines(SCREEN_WIDTH / 2 - 150, 350, 300, 25, (Color){100, 100, 150, 255});
+    DrawRectangle(SCREEN_WIDTH / 2 - 150, 350, (int)(300.0f * ((float)player.hp / player.maxHp)), 25, (Color){50, 200, 100, 255});
     sprintf(playerHpText, "HP: %d / %d", player.hp, player.maxHp);
-    DrawText(playerHpText, SCREEN_WIDTH / 2 - 60, 350, 20, WHITE);
+    DrawText(playerHpText, SCREEN_WIDTH / 2 - 65, 352, 20, WHITE);
 
     // --- Mensagem de Batalha ---
-    DrawRectangle(0, SCREEN_HEIGHT - 180, SCREEN_WIDTH, 60, BLACK);
-    DrawText(battleMessage, 20, SCREEN_HEIGHT - 170, 20, WHITE);
+    DrawRectangle(0, SCREEN_HEIGHT - 180, SCREEN_WIDTH, 70, (Color){20, 20, 40, 255});
+    DrawRectangleLines(0, SCREEN_HEIGHT - 180, SCREEN_WIDTH, 70, (Color){100, 150, 200, 255});
+    DrawText(battleMessage, 25, SCREEN_HEIGHT - 160, 16, (Color){150, 255, 200, 255});
 
     // --- Inventário / Opções ---
-    DrawText("INVENTARIO (Use SETAS e ENTER):", 20, SCREEN_HEIGHT - 100, 20, RAYWHITE);
+    DrawText("INVENTARIO (Use SETAS e ENTER):", 20, SCREEN_HEIGHT - 100, 16, (Color){100, 200, 255, 255});
     
     int itemPosX = 20;
     int itemWidth = 180;
     
     for (int i = 0; i < INVENTORY_SIZE; i++) {
-        Color itemColor = WHITE;
+        Color itemColor = (Color){200, 200, 220, 255};
+        Color bgColor = (Color){50, 50, 100, 255};
         
         // Item selecionado
         if (i == selectedItemIndex) {
-            DrawRectangle(itemPosX - 5, SCREEN_HEIGHT - 70, itemWidth + 10, 40, YELLOW);
-            itemColor = BLACK;
+            DrawRectangle(itemPosX - 5, SCREEN_HEIGHT - 70, itemWidth + 10, 40, (Color){100, 200, 255, 255});
+            DrawRectangleLines(itemPosX - 5, SCREEN_HEIGHT - 70, itemWidth + 10, 40, (Color){150, 255, 200, 255});
+            itemColor = (Color){20, 20, 40, 255};
+        } else {
+            DrawRectangle(itemPosX - 5, SCREEN_HEIGHT - 70, itemWidth + 10, 40, bgColor);
+            DrawRectangleLines(itemPosX - 5, SCREEN_HEIGHT - 70, itemWidth + 10, 40, (Color){80, 80, 120, 255});
         }
         
-        // Item já usado (agora só afeta poção/bomba)
+        // Item já usado
         if (itemUsed[i]) {
-            itemColor = GRAY;
+            itemColor = (Color){100, 100, 100, 255};
         }
         
-        DrawText(GetItemName(inventory[i]), itemPosX, SCREEN_HEIGHT - 60, 15, itemColor);
-        itemPosX += itemWidth + 20; // Espaçamento
+        const char* displayName = GetItemName(inventory[i]);
+        // Nao mostrar a Espada e Armadura nos utilitarios (apenas modificam acao)
+        if (inventory[i] == ITEM_SWORD || inventory[i] == ITEM_ARMOR) displayName = "Vazio";
+        DrawText(displayName, itemPosX + 5, SCREEN_HEIGHT - 58, 12, itemColor);
+        itemPosX += itemWidth + 20;
     }
+
+    // Desenhar botao Atacar com estilo
+    int btnW = 130;
+    int btnH = 45;
+    int btnX = SCREEN_WIDTH - btnW - 20;
+    int btnY = SCREEN_HEIGHT - 85;
+    DrawRectangle(btnX, btnY, btnW, btnH, (Color){180, 50, 50, 255});
+    DrawRectangleLines(btnX, btnY, btnW, btnH, (Color){255, 100, 100, 255});
+    DrawText("ATACAR [A]", btnX + 10, btnY + 10, 16, WHITE);
 }
 
 // Desenha a Tela Final
 void DrawEnding(bool playerWon) {
-    ClearBackground(BLACK);
+    ClearBackground((Color){20, 20, 40, 255});
+    
+    // Fundo decorativo
+    DrawRectangle(SCREEN_WIDTH / 2 - 400, SCREEN_HEIGHT / 2 - 200, 800, 400, (Color){40, 40, 80, 200});
+    DrawRectangleLines(SCREEN_WIDTH / 2 - 400, SCREEN_HEIGHT / 2 - 200, 800, 400, (Color){100, 200, 255, 255});
     
     if (playerWon) {
-        DrawText("VITORIA!", 250, 250, 50, GREEN);
-        DrawText("O Chefe foi derrotado e a masmorra esta segura.", 150, 320, 20, RAYWHITE);
+        DrawText("VITORIA!", 280, 200, 60, (Color){100, 255, 100, 255});
+        DrawText("O Chefe foi derrotado e a masmorra esta segura.", 120, 300, 22, (Color){200, 255, 200, 255});
     } else {
-        DrawText("GAME OVER", 250, 250, 50, RED);
-        DrawText("Voce foi derrotado...", 280, 320, 20, RAYWHITE);
+        DrawText("GAME OVER", 260, 200, 60, (Color){255, 80, 80, 255});
+        DrawText("Voce foi derrotado...", 280, 300, 22, (Color){255, 150, 150, 255});
     }
     
-    DrawText("Pressione [ENTER] para jogar novamente.", 200, 500, 20, GRAY);
+    DrawText("Pressione [ENTER] para jogar novamente.", 200, 500, 20, (Color){150, 200, 255, 255});
+}
+
+// Desenha o final de fuga (moeda)
+void DrawEscapeEnding(void) {
+    ClearBackground((Color){20, 20, 40, 255});
+    
+    // Fundo decorativo
+    DrawRectangle(SCREEN_WIDTH / 2 - 400, SCREEN_HEIGHT / 2 - 200, 800, 400, (Color){40, 40, 80, 200});
+    DrawRectangleLines(SCREEN_WIDTH / 2 - 400, SCREEN_HEIGHT / 2 - 200, 800, 400, (Color){255, 200, 100, 255});
+    
+    DrawText("FUGA!", 300, 200, 60, (Color){255, 200, 100, 255});
+    DrawText("Voce distraiu o chefe com a moeda e conseguiu fugir da masmorra.", 80, 300, 20, (Color){255, 220, 150, 255});
+    DrawText("Este final conta como uma fuga — nem vitoria nem derrota.", 100, 340, 18, (Color){200, 180, 120, 255});
+    DrawText("Pressione [ENTER] para jogar novamente.", 200, 520, 20, (Color){150, 200, 255, 255});
 }
 
 //------------------------------------------------------------------------------------
@@ -464,6 +605,7 @@ int main(void) {
                 break;
             case GAME_STATE_ENDING_GOOD:
             case GAME_STATE_ENDING_BAD:
+            case GAME_STATE_ENDING_ESCAPE:
                 UpdateEnding();
                 break;
         }
@@ -485,6 +627,9 @@ int main(void) {
                 break;
             case GAME_STATE_ENDING_BAD:
                 DrawEnding(false); // Tela de derrota
+                break;
+            case GAME_STATE_ENDING_ESCAPE:
+                DrawEscapeEnding(); // Tela de fuga
                 break;
         }
 
