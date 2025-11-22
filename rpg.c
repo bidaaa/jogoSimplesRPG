@@ -5,9 +5,6 @@
 #include <math.h>
 #include <time.h>
 
-//------------------------------------------------------------------------------------
-// CONSTANTES & ESTRUTURAS
-//------------------------------------------------------------------------------------
 #define SCREEN_WIDTH 1000
 #define SCREEN_HEIGHT 700
 #define INVENTORY_SIZE 4
@@ -21,6 +18,7 @@ typedef enum
     GAME_STATE_ENDING_BAD,
     GAME_STATE_ENDING_ESCAPE
 } GameState;
+
 typedef enum
 {
     ITEM_NONE,
@@ -30,6 +28,7 @@ typedef enum
     ITEM_COIN,
     ITEM_ARMOR
 } ItemType;
+
 typedef enum
 {
     BATTLE_PLAYER_TURN,
@@ -41,6 +40,7 @@ typedef struct
     int hp;
     int maxHp;
 } Player;
+
 typedef struct
 {
     int hp;
@@ -48,9 +48,6 @@ typedef struct
     int attack;
 } Boss;
 
-//------------------------------------------------------------------------------------
-// VARIÁVEIS GLOBAIS
-//------------------------------------------------------------------------------------
 static GameState currentState;
 static BattleState battleState;
 
@@ -63,13 +60,11 @@ static int inventoryCount;
 static int selectedItemIndex;
 static int currentStage;
 
-// UI e Textos
 static const char *battleMessage;
 static char messageBuffer[256];
 static float itemMessageTimer = 0.0f;
 static ItemType lastItemCollected = ITEM_NONE;
 
-// Lógica de Batalha
 static bool playerHasArmor;
 static float bossTurnTimer;
 static float playerAttackTimer;
@@ -84,7 +79,6 @@ static const float BOSS_ATTACK_DURATION = 0.40f;
 static float bossHurtTimer;
 static const float BOSS_HURT_DURATION = 0.9f;
 
-// Texturas e Animação
 static Texture2D playerTexture;
 static Texture2D bossTexture;
 static Texture2D titleBackgroundTexture;
@@ -93,6 +87,12 @@ static Texture2D playerAttackTexture;
 static Texture2D bossAttackTexture;
 static Texture2D playerHitTexture;
 static Texture2D bossHitTexture;
+
+static Texture2D bgStage1;
+static Texture2D bgStage2;
+static Texture2D bgStage3;
+static Texture2D bgStage4;
+
 static bool texturesInitialized = false;
 
 static int playerAttackFrameCount;
@@ -105,16 +105,11 @@ static int bossAttackFrame;
 static float bossAttackFrameTime;
 static float bossAttackFrameDuration;
 
-// Exploração
 static float explorePlayerX;
 static float explorePlayerY;
 static Rectangle doorLeftRect;
 static Rectangle doorRightRect;
 static float explorePlayerSpeed;
-
-//------------------------------------------------------------------------------------
-// LÓGICA DO JOGO
-//------------------------------------------------------------------------------------
 
 const char *GetItemName(ItemType item)
 {
@@ -279,7 +274,6 @@ void PlayerAttack(void)
     bossTurnTimer = 1.1f;
 }
 
-// Helper auxiliar para carregar textura verificando extensões
 Texture2D LoadAsset(const char *baseName)
 {
     char path[128];
@@ -295,7 +289,7 @@ Texture2D LoadAsset(const char *baseName)
     if (FileExists(path))
         return LoadTexture(path);
 
-    return (Texture2D){0}; // Retorna textura vazia se não encontrar
+    return (Texture2D){0};
 }
 
 void InitGame(void)
@@ -333,18 +327,21 @@ void InitGame(void)
 
     if (!texturesInitialized)
     {
-        playerTexture = LoadAsset("player");
-        bossTexture = LoadAsset("boss");
-        titleBackgroundTexture = LoadAsset("title_bg");
-        battleBackgroundTexture = LoadAsset("battle_bg");
+        playerTexture = LoadAsset("boss_player/player");
+        bossTexture = LoadAsset("boss_player/boss");
+        titleBackgroundTexture = LoadAsset("cenarios/title_bg");
+        battleBackgroundTexture = LoadAsset("cenarios/battle_bg");
 
-        // Assets opcionais de batalha
+        bgStage1 = LoadAsset("cenarios/cenario1");
+        bgStage2 = LoadAsset("cenarios/cenario2");
+        bgStage3 = LoadAsset("cenarios/cenario3");
+        bgStage4 = LoadAsset("cenarios/cenario4");
+
         bossAttackTexture = LoadAsset("boss_attack");
         playerHitTexture = LoadAsset("player_hit");
         bossHitTexture = LoadAsset("boss_hit");
         playerAttackTexture = LoadAsset("player_attack");
 
-        // Configura frames se for spritesheet
         bossAttackFrameCount = 1;
         bossAttackFrameDuration = BOSS_ATTACK_DURATION;
         if (bossAttackTexture.id != 0 && bossAttackTexture.height > 0)
@@ -372,10 +369,6 @@ void InitGame(void)
     bossAttackTimer = 0.0f;
     bossHurtTimer = 0.0f;
 }
-
-//------------------------------------------------------------------------------------
-// UPDATE
-//------------------------------------------------------------------------------------
 
 void UpdateExplore(void)
 {
@@ -509,13 +502,8 @@ void UpdateTitleScreen(void)
     }
 }
 
-//------------------------------------------------------------------------------------
-// DRAW
-//------------------------------------------------------------------------------------
-
 void DrawPlayerSprite(int posX, int posY)
 {
-    // Fallback se não houver imagem
     DrawCircle(posX + 10, posY - 10, 10, (Color){255, 200, 150, 255});
     DrawRectangle(posX, posY, 20, 40, (Color){0, 150, 255, 255});
     DrawRectangleLines(posX, posY, 20, 40, (Color){0, 100, 200, 255});
@@ -523,7 +511,6 @@ void DrawPlayerSprite(int posX, int posY)
 
 void DrawBossSprite(int posX, int posY)
 {
-    // Fallback se não houver imagem
     DrawCircle(posX + 20, posY + 30, 50, (Color){100, 0, 0, 100});
     DrawRectangle(posX, posY, 40, 60, (Color){200, 0, 0, 255});
     DrawRectangleLines(posX, posY, 40, 60, (Color){100, 0, 0, 255});
@@ -531,7 +518,30 @@ void DrawBossSprite(int posX, int posY)
 
 void DrawExplore(void)
 {
-    ClearBackground((Color){20, 20, 40, 255});
+    Texture2D currentBg = {0};
+
+    if (currentStage == 0)
+        currentBg = bgStage1;
+    else if (currentStage == 1)
+        currentBg = bgStage2;
+    else if (currentStage == 2)
+        currentBg = bgStage3;
+    else if (currentStage == 3)
+        currentBg = bgStage4;
+
+    if (currentBg.id != 0)
+    {
+        DrawTexturePro(currentBg,
+                       (Rectangle){0, 0, (float)currentBg.width, (float)currentBg.height},
+                       (Rectangle){0, 0, SCREEN_WIDTH, SCREEN_HEIGHT},
+                       (Vector2){0, 0}, 0.0f, WHITE);
+    }
+    else
+    {
+        ClearBackground((Color){20, 20, 40, 255});
+        DrawRectangle(60, 120, SCREEN_WIDTH - 120, 420, (Color){30, 40, 70, 255});
+        DrawRectangleLines(60, 120, SCREEN_WIDTH - 120, 420, (Color){100, 150, 200, 255});
+    }
 
     if (itemMessageTimer > 0)
     {
@@ -552,41 +562,43 @@ void DrawExplore(void)
 
     switch (currentStage)
     {
-    case 0: // O jogo te dá Poção em ambas as escolhas aqui
-        storyText = "Voce chega aos portoes do Castelo CTS exausto.\nPrecisa recuperar as forcas antes de entrar.";
+    case 0:
+        storyText = "Voce chega aos portoes do Castelo exausto.\nPrecisa recuperar as forcas antes de entrar.";
         leftDoorLabel = "Beber da Fonte";
         rightDoorLabel = "Comer Frutas";
         break;
-    case 1: // Esquerda = Espada, Direita = Bomba
+    case 1:
         storyText = "No arsenal abandonado, voce ve duas armas.\nQual estilo de combate voce prefere?";
         leftDoorLabel = "Espada Antiga";
         rightDoorLabel = "Bomba Caseira";
         break;
-    case 2: // Esquerda = Armadura, Direita = Moeda
+    case 2:
         storyText = "Um esqueleto segura dois itens valiosos.\nVoce prioriza protecao ou tenta subornar o chefe?";
         leftDoorLabel = "Armadura Leve";
         rightDoorLabel = "Bolsa de Ouro";
         break;
-    case 3: // O jogo te dá Poção em ambas as escolhas aqui
+    case 3:
         storyText = "A porta do trono esta a frente. O medo gela a espinha.\nUltima chance de curar ferimentos.";
         leftDoorLabel = "Usar Curativos";
         rightDoorLabel = "Tonico Vital";
         break;
     }
 
-    DrawRectangle(60, 120, SCREEN_WIDTH - 120, 420, (Color){30, 40, 70, 255});
-    DrawRectangleLines(60, 120, SCREEN_WIDTH - 120, 420, (Color){100, 150, 200, 255});
-    DrawText(storyText, 80, 140, 22, (Color){200, 220, 255, 255});
+    DrawText(storyText, 82, 62, 22, BLACK);
+    DrawText(storyText, 80, 60, 22, WHITE);
 
-    DrawRectangleRec(doorLeftRect, (Color){80, 40, 30, 255});
-    DrawRectangleLines((int)doorLeftRect.x, (int)doorLeftRect.y, (int)doorLeftRect.width, (int)doorLeftRect.height, (Color){200, 180, 150, 255});
+    DrawRectangleRec(doorLeftRect, (Color){255, 255, 255, 30});
+    DrawRectangleLines((int)doorLeftRect.x, (int)doorLeftRect.y, (int)doorLeftRect.width, (int)doorLeftRect.height, YELLOW);
+
+    DrawText(leftDoorLabel, (int)doorLeftRect.x + 12, (int)doorLeftRect.y + 92, 16, BLACK);
     DrawText(leftDoorLabel, (int)doorLeftRect.x + 10, (int)doorLeftRect.y + 90, 16, WHITE);
 
-    DrawRectangleRec(doorRightRect, (Color){40, 60, 90, 255});
-    DrawRectangleLines((int)doorRightRect.x, (int)doorRightRect.y, (int)doorRightRect.width, (int)doorRightRect.height, (Color){180, 200, 255, 255});
+    DrawRectangleRec(doorRightRect, (Color){255, 255, 255, 30});
+    DrawRectangleLines((int)doorRightRect.x, (int)doorRightRect.y, (int)doorRightRect.width, (int)doorRightRect.height, YELLOW);
+
+    DrawText(rightDoorLabel, (int)doorRightRect.x + 12, (int)doorRightRect.y + 92, 16, BLACK);
     DrawText(rightDoorLabel, (int)doorRightRect.x + 10, (int)doorRightRect.y + 90, 16, WHITE);
 
-    // Desenha Personagem
     if (texturesInitialized && playerTexture.id != 0)
     {
         Rectangle src = {0, 0, (float)playerTexture.width, (float)playerTexture.height};
@@ -599,7 +611,8 @@ void DrawExplore(void)
         DrawPlayerSprite((int)explorePlayerX, (int)explorePlayerY);
     }
 
-    DrawText("Use SETAS ou A/D e [ENTER] na porta.", 80, SCREEN_HEIGHT - 120, 16, WHITE);
+    DrawText("Use SETAS ou A/D e [ENTER] na porta.", 82, SCREEN_HEIGHT - 38, 16, BLACK);
+    DrawText("Use SETAS ou A/D e [ENTER] na porta.", 80, SCREEN_HEIGHT - 40, 16, WHITE);
 }
 
 void DrawBattle(void)
@@ -618,14 +631,12 @@ void DrawBattle(void)
     const int BAR_W = 300;
     const int BAR_H = 25;
 
-    // UI Player
-    DrawText("Player (você)", BAR_MARGIN, BAR_MARGIN, 22, (Color){150, 200, 255, 255});
+    DrawText("Player (voce)", BAR_MARGIN, BAR_MARGIN, 22, (Color){150, 200, 255, 255});
     DrawRectangle(BAR_MARGIN, BAR_MARGIN + 35, BAR_W, BAR_H, (Color){50, 50, 80, 255});
     DrawRectangle(BAR_MARGIN, BAR_MARGIN + 35, (int)(BAR_W * ((float)player.hp / player.maxHp)), BAR_H, (Color){50, 200, 100, 255});
     DrawRectangleLines(BAR_MARGIN, BAR_MARGIN + 35, BAR_W, BAR_H, WHITE);
     DrawText(TextFormat("HP: %d / %d", player.hp, player.maxHp), BAR_MARGIN + 80, BAR_MARGIN + 37, 20, WHITE);
 
-    // UI Boss
     int bossBarX = SCREEN_WIDTH - BAR_W - BAR_MARGIN;
     DrawText("Boss", bossBarX, BAR_MARGIN, 22, (Color){255, 100, 100, 255});
     DrawRectangle(bossBarX, BAR_MARGIN + 35, BAR_W, BAR_H, (Color){50, 50, 80, 255});
@@ -633,10 +644,7 @@ void DrawBattle(void)
     DrawRectangleLines(bossBarX, BAR_MARGIN + 35, BAR_W, BAR_H, WHITE);
     DrawText(TextFormat("HP: %d / %d", boss.hp, boss.maxHp), bossBarX + 80, BAR_MARGIN + 37, 20, WHITE);
 
-    // Desenho dos Sprites
     const float GROUND_Y = 480.0f;
-
-    // --- BOSS ---
     Vector2 posB = {SCREEN_WIDTH - 250.0f, GROUND_Y};
     float bossOffX = 0;
     if (bossIsAttacking)
@@ -657,7 +665,6 @@ void DrawBattle(void)
 
         Rectangle src = {bossIsAttacking ? bossAttackFrame * w : 0, 0, w, (float)tex.height};
         Vector2 origin = {w / 2, tex.height / 2.0f};
-        // Ajusta Y para ficar no chão
         DrawTexturePro(tex, src, (Rectangle){posB.x + bossOffX, posB.y - tex.height / 2.0f, w, (float)tex.height}, origin, 0, bossTint);
 
         if (bossHurtTimer > 0 && bossHitTexture.id != 0)
@@ -669,7 +676,6 @@ void DrawBattle(void)
         DrawBossSprite((int)(posB.x + bossOffX) - 20, (int)GROUND_Y - 120);
     }
 
-    // --- PLAYER ---
     int baseX = 250;
     float atkOffX = 0;
     if (playerIsAttacking)
@@ -701,7 +707,6 @@ void DrawBattle(void)
         DrawPlayerSprite(baseX + (int)atkOffX - 10, (int)GROUND_Y - 60);
     }
 
-    // --- HUD Inventário ---
     int itemPosX = 20;
     for (int i = 0; i < INVENTORY_SIZE; i++)
     {
@@ -715,12 +720,10 @@ void DrawBattle(void)
         itemPosX += 200;
     }
 
-    // Botão de Ataque
     DrawRectangle(SCREEN_WIDTH - 150, SCREEN_HEIGHT - 85, 130, 45, RED);
     DrawRectangleLines(SCREEN_WIDTH - 150, SCREEN_HEIGHT - 85, 130, 45, MAROON);
     DrawText("ATACAR [A]", SCREEN_WIDTH - 140, SCREEN_HEIGHT - 75, 16, WHITE);
 
-    // Mensagem de Batalha Central
     if (battleMessage)
     {
         DrawText(battleMessage, SCREEN_WIDTH / 2 - MeasureText(battleMessage, 20) / 2, 100, 20, YELLOW);
@@ -760,7 +763,6 @@ void DrawTitleScreen(void)
 
     DrawText("Rush RPG", SCREEN_WIDTH / 2 - MeasureText("RushRPG", 80) / 2, 100, 80, GOLD);
 
-    // Piscada no texto
     if (((int)(GetTime() * 2) % 2) == 0)
     {
         DrawText("Pressione [ENTER] para comecar", SCREEN_WIDTH / 2 - MeasureText("Pressione [ENTER] para comecar", 30) / 2, SCREEN_HEIGHT - 100, 30, GREEN);
@@ -774,9 +776,6 @@ void DrawTitleScreen(void)
         DrawText(students[i], SCREEN_WIDTH - 240, namesY + 30 + (i * 20), 10, LIGHTGRAY);
 }
 
-//------------------------------------------------------------------------------------
-// MAIN
-//------------------------------------------------------------------------------------
 int main(void)
 {
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Raylib RPG de Turnos");
@@ -841,6 +840,15 @@ int main(void)
         UnloadTexture(bossAttackTexture);
     if (playerAttackTexture.id)
         UnloadTexture(playerAttackTexture);
+
+    if (bgStage1.id)
+        UnloadTexture(bgStage1);
+    if (bgStage2.id)
+        UnloadTexture(bgStage2);
+    if (bgStage3.id)
+        UnloadTexture(bgStage3);
+    if (bgStage4.id)
+        UnloadTexture(bgStage4);
 
     CloseWindow();
     return 0;
